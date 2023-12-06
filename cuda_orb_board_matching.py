@@ -1,9 +1,10 @@
 # Import required Python packages
-from flask import Flask, jsonify, request
 import os
-import cv2 as cv
-import time
 import pickle
+import time
+
+import cv2 as cv
+from flask import Flask, jsonify, request
 from logger import init_loggers
 
 # Initialize the loggers
@@ -38,6 +39,9 @@ def get_code(image_path):
 
         # Iterate over all reference images
         for idx, image_file in enumerate(ref_image_files):
+# Define the path for the heights and widths pickle files in which the heights and widths of the images will be stored
+heights_file = os.path.join(root_dir, "heights.pkl")
+widths_file = os.path.join(root_dir, "widths.pkl")
             ref_filename = os.path.join(references_folder, image_file)
 
             # Call the cuda_orb_match method to get the time taken and number of good matches for each reference image
@@ -91,6 +95,50 @@ def cuda_orb_match(input_path, reference_img_path):
     gpu_img1 = cv.cuda_GpuMat(img1)
 
     # Detect and compute keypoints and descriptors
+    # Open the heights and widths files and store the contents in a heights and widths dictionaries
+    with open(heights_file, "rb") as f:
+        try:
+            heights_data = pickle.load(f)
+        except EOFError:
+            heights_data = {}
+
+    with open(widths_file, "rb") as f:
+        try:
+            widths_data = pickle.load(f)
+        except EOFError:
+            widths_data = {}
+
+    input_image_basename = os.path.basename(input_path)
+
+    # Calculate the height and width of the images
+    if input_image_basename not in heights_data:
+        h1, w1 = img1.shape[:2]
+        heights_data[input_image_basename] = h1
+        widths_data[input_image_basename] = w1
+    else:
+        h1 = heights_data[input_image_basename]
+        w1 = widths_data[input_image_basename]
+
+    if ref_image_basename not in heights_data:
+        img2 = cv.imread(reference_img_path, cv.IMREAD_GRAYSCALE)
+        assert img2 is not None, "Could not read the image 2."
+        h2, w2 = img2.shape[:2]
+        heights_data[ref_image_basename] = h2
+        widths_data[ref_image_basename] = w2
+    else:
+        h2 = heights_data[ref_image_basename]
+        w2 = widths_data[ref_image_basename]
+
+    # Store the calculated heights and widths for future use
+    with open(heights_file, "wb") as f:
+        pickle.dump(heights_data, f)
+
+    with open(widths_file, "wb") as f:
+        pickle.dump(widths_data, f)
+
+    # Check the ratio of the heights and widths of the two images
+    if h1/h2 > 1.5 or w1/w2 > 1.5:
+        return (0, 0)
     keypoints1_gpu, descriptors1_gpu = orb.detectAndComputeAsync(gpu_img1, None)
 
     # Download descriptors from GPU to CPU memory
