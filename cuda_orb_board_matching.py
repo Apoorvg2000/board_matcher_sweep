@@ -1,9 +1,10 @@
 # Import required Python packages
-from flask import Flask, jsonify, request
 import os
-import cv2 as cv
-import time
 import pickle
+import time
+
+import cv2 as cv
+from flask import Flask, jsonify, request
 from logger import init_loggers
 
 # Initialize the loggers
@@ -12,8 +13,10 @@ info_logger, debug_logger = init_loggers()
 # Define the root directory path
 root_dir = "pi_capture"
 
-# Define the path for the descriptors pickle file in which the ORB descriptors will be stored
+# Define the paths for the descriptors, heights and widths pickle files
 descriptor_file = os.path.join(root_dir, "descriptors.pkl")
+heights_file = os.path.join(root_dir, "heights.pkl")
+widths_file = os.path.join(root_dir, "widths.pkl")
 
 
 # Method to find the best matching/closest image in the references images to the input image and return the best matched reference image
@@ -111,6 +114,51 @@ def cuda_orb_match(input_path, reference_img_path):
         gpu_img2 = cv.cuda_GpuMat(img2)
 
         # Detect and compute keypoints and descriptors
+    # Calculate the heights and widths of the images
+    h1, w1 = img1.shape[:2]
+    h2, w2 = img2.shape[:2]
+
+    # Open the heights and widths files and store the contents in dictionaries
+    with open(heights_file, "rb") as f:
+        try:
+            heights_data = pickle.load(f)
+        except EOFError:
+            heights_data = {}
+
+    with open(widths_file, "rb") as f:
+        try:
+            widths_data = pickle.load(f)
+        except EOFError:
+            widths_data = {}
+
+    # Check if the heights and widths of the images are in the dictionaries
+    if input_path not in heights_data:
+        heights_data[input_path] = h1
+    else:
+        h1 = heights_data[input_path]
+
+    if input_path not in widths_data:
+        widths_data[input_path] = w1
+    else:
+        w1 = widths_data[input_path]
+
+    if ref_image_basename not in heights_data:
+        heights_data[ref_image_basename] = h2
+    else:
+        h2 = heights_data[ref_image_basename]
+
+    if ref_image_basename not in widths_data:
+        widths_data[ref_image_basename] = w2
+    else:
+        w2 = widths_data[ref_image_basename]
+
+    # Calculate the ratios of the heights and widths of the images
+    h_ratio = h1 / h2
+    w_ratio = w1 / w2
+
+    # If either ratio is greater than 1.5, return (0, 0)
+    if h_ratio > 1.5 or w_ratio > 1.5:
+        return (0, 0)
         keypoints2_gpu, descriptors2_gpu = orb.detectAndComputeAsync(gpu_img2, None)
 
         # Download descriptors from GPU to CPU memory
@@ -150,3 +198,9 @@ def cuda_orb_match(input_path, reference_img_path):
 
     # Return total time taken and number of good matches
     return (time_taken_match + time_taken_detect_describe, good_matches)
+    # If any new heights or widths have been added, write the updated dictionaries back to the files
+    with open(heights_file, "wb") as f:
+        pickle.dump(heights_data, f)
+
+    with open(widths_file, "wb") as f:
+        pickle.dump(widths_data, f)
