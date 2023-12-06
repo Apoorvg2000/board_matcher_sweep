@@ -10,7 +10,7 @@ from logger import init_loggers
 info_logger, debug_logger = init_loggers()
 
 # Define the root directory path
-root_dir = "/home/ubuntu/smartivity-reference-1/pi_capture"
+root_dir = "pi_capture"
 
 # Define the path for the descriptors pickle file in which the ORB descriptors will be stored
 descriptor_file = os.path.join(root_dir, "descriptors.pkl")
